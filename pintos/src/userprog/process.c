@@ -44,9 +44,10 @@ process_execute (const char *file_name)
   tid_t tid;
   char i = 0;
   // tokenize
-  char* string_start;
+  char* string_start = NULL;
+  char* tmp_ptr = NULL;
   char* s1 = file_name;
-  char num_args =-1;
+  int num_args =0;
   bool first_char= true;
   
   while (*s1) //locate NULL char
@@ -73,7 +74,8 @@ process_execute (const char *file_name)
 		first_char=true;
 	 s1--; 
   }
-  string_start = curr_addr++;	// save addr of first char
+  /string_start = curr_addr++;	// save addr of first char
+  tmp_ptr = PHYS_BASE -2; 		// skip first null
   char padd_zeros =curr_addr%4;// add this many zeros
   for(i=0;i<padd_zeros+4;i++)
   {
@@ -81,21 +83,32 @@ process_execute (const char *file_name)
 	  curr_addr --1;  // decrement pointer		
 	    
   }  
-  
+  for(i=0; i<= num_args ; i++){ //for each argument plus funct name
+	  if(&tmp_ptr == '\0'){		// add that address to the stack
+		  *curr_addr = tmp_ptr+1; //syntax?
+		  curr_addr--;
+	  }
+	  tmp_ptr--;
+  }
+  *curr_addr=curr_addr+1; // add address of argv[0] to stack
+  curr_addr--;			
+  *curr_addr = num_args;// argc = number of args
+  curr_addr--;
+  curr_addr = NULL;
   //##Set exec file name here
   //##Initialize a semaphore for loading here
   struct semaphore sema;
   sema_init(&sema,1);
   //##Add program name to thread_name, watch out for the size, strtok_r.....
   //##Program name is the first token of file_name
-  char* tmp_ptr = string_start;
+  tmp_ptr = string_start;
   for(i=0;(*tmp_ptr != '\0')&&(i<16);i++)
   {
 		thread_name[1] = &tmp_ptr;
   }
   //##Change file_name in thread_create to thread_name
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, exec); //## remove fn_copy, Add exec to the end of these params, a void is allowed. Look in thread_create, kf->aux is set to thread_create aux which would be exec. So make good use of exec helper!
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy); //## remove fn_copy, Add exec to the end of these params, a void is allowed. Look in thread_create, kf->aux is set to thread_create aux which would be exec. So make good use of exec helper!
   if (tid == TID_ERROR) //##Change to !=
 	{  
 	sema_down(&sema);
@@ -515,8 +528,11 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
+      if (success){
         *esp = PHYS_BASE -12; // ** minus 12
+      
+      
+      }
       else
         palloc_free_page (kpage);
     }
