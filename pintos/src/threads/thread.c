@@ -204,6 +204,8 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  if (!aux) *((struct thread**)aux) = t;
+
   intr_set_level (old_level);
 
   /* Add to run queue. */
@@ -432,7 +434,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
