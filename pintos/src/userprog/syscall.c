@@ -95,12 +95,25 @@ static void syscall_handler (struct intr_frame *f UNUSED)
 
 // calls shutdown_power_off()
 void halt (void) {
-    return;
+    shutdown_power_off();
 }
 
 // terminates the user program, returning status to the kernel
 void exit (int status) {
-    return;
+	struct thread *t = thread_current();
+	if(parent) // if child
+	{
+		struct list_elem *e = list_begin (&all_list);
+		while(e != list_end (&all_list)) // look at all threads
+		{
+			struct thread* t = list_entry(e,struct thread,allelem);
+			if (t->tid == pid)		// if the parent is alive
+			    t->status = status; // sets  status
+			e = list_next(e))
+		}
+    }
+    printf ("%s: exit(%d)\n",t->name,status);
+    thread_exit();
 }
 
 // Runs the executable whose name is given in cmd_line,
@@ -110,6 +123,30 @@ void exit (int status) {
 // from the exec until it knows whether the child process successfully loaded
 // its executable. You must use appropriate synchronization to ensure this. 
 pid_t exec (const char *cmd_line) {
+	tid_t ret = process_execute(cmd_line);
+	struct thread *t = thread_current();
+	struct thread *child = NULL;
+	struct list_elem *e;
+	// find child process
+	for (e= list_begin(&t->child_list);e!=list_end(&t->child_list); e= list_next(e))
+	{		
+		struct thread *c =list_entry (e, struct thread, child_elem);
+		if(ret == c->tid)
+		{
+			child = c;
+			break;
+		}
+    }// if there the thread does not have a child
+    if(!child)
+		return ERROR;
+	else if(child->load_success = 1)
+	{
+		//if the child has not been loaded 
+	}
+	else if(child->load_success = 2)
+	{
+		// if the child has load failed
+	}
     return (pid_t)-1;
 }
 
@@ -152,6 +189,10 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
+	
+	get_user()
+	put_user(buffer, )
+	
     return -1;
 }
 

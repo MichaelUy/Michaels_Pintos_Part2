@@ -469,6 +469,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->fd = 2;
+  t-> parent = 0; // parent is a tid_t, how to init?
+  t->load_success = 0;
+  t->status = 0;
   list_push_back (&all_list, &t->allelem);
 }
 
