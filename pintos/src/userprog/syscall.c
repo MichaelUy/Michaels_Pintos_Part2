@@ -16,7 +16,32 @@ uint32_t getArg(void** vp) {
     *vp -= 4; // update esp
     return *d;
 }
-
+bool validate_addr(const void* uaddr);
+{
+	 return (uaddr< PHYS_BASE && pagdir_get_page(current_thread()-> pagedir, uaddr)
+}
+bool validate_buffer(const void* uaddr, off_t size)
+{
+	int i = 0;
+	void* addr = uaddr;
+	for(i =0; i<size; i++ addr++)
+	{
+		if(!validate_addr(addr))
+			return false;
+	}
+	return true;
+}
+bool validate_buffer(const void* uaddr, off_t size)
+{
+	int i = 0;
+	void* addr = uaddr;
+	for(i =0; i<size; i++ addr++)
+	{
+		if(!validate_addr(addr))
+			return false;
+	}
+	return true;
+}
 
 static void syscall_handler (struct intr_frame *f UNUSED) 
 {
@@ -128,43 +153,35 @@ pid_t exec (const char *cmd_line) {
 	struct thread *child = NULL;
 	struct list_elem *e;
 	// find child process
-	for (e= list_begin(&t->child_list);e!=list_end(&t->child_list); e= list_next(e))
-	{		
-		struct thread *c =list_entry (e, struct thread, child_elem);
-		if(ret == c->tid)
-		{
-			child = c;
-			break;
-		}
-    }// if there the thread does not have a child
+	child=get_child(ret);
+    // if there the thread does not have a child
     if(!child)
-		return ERROR;
-	else if(child->load_success = 1)
-	{
-		//if the child has not been loaded 
-	}
-	else if(child->load_success = 2)
-	{
-		// if the child has load failed
-	}
+		return -1;
     return (pid_t)-1;
 }
 
 // Wait for a child process, and retrieve its exit status
 int wait (pid_t pid) {
-    return -1;
+	thread *child = get_child(pid);
+	if(waited)			// if process has been waited on
+		return -1;
+	else 				// else set it to waited 
+		waited = 1;
+	if(!child->exited)	
+		sema_down(child);
+    return child->ret;
 }
 
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    return false;
+    return filesys_create(file, initial_size);
 }
 
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    return false;
+    return filesys_remove(file);
 }
 
 // open a file, and return a file descriptor
