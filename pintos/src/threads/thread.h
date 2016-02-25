@@ -89,19 +89,14 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-	int fd;
-	//struct file files[16];              /* store fd and file* data. only 16 open files are allowed (including stdin and stdout) */
-	struct list file_list;
-	struct list_elem list_elem;
-	struct list child_list;
-	struct list_elem child_elem;
-	//struct thread* parent;              /* parent thread */
-	tid_t parent;
-	int load_success;
-	int status;
 
-   
+	struct file files[16];              /* store fd and file* data. only 16 open files are allowed (including stdin and stdout) */
 
+	struct thread* parent;              /* parent thread */
+	struct list children;               /* list of children */
+	struct list_elem child_elem;        /* child list element */
+
+	bool loaded;                        /* is the process loaded yet? */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
