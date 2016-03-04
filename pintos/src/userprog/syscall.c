@@ -248,11 +248,15 @@ int filesize (int fd) {
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    
     if (fd == 0)
     {
 		//write read from keyboard
-		//input_getc();
+		char* buf = (char*)buffer;
+		unsigned i;
+		for(i=0;i<size;i++)
+		{
+			buf[i] = input_getc();
+		}
 	}
 	lock_acquire(&file_lock);
 	struct file* f = NULL;
@@ -284,7 +288,9 @@ int write (int fd, const void *buffer, unsigned size) {
 	if(fd == 1)
 	{
 		//write  to console
-		//get_user();
+		putbuf(buffer,size);
+		return size;
+		//get_user				// whats the purpose of these?
 		//put_user(buffer, );
 	}
 	struct file* f = NULL;
@@ -360,25 +366,19 @@ unsigned tell (int fd) {
 // make sure to close all fds when a process ends
 void close (int fd) {
     lock_acquire(&file_lock);
-    /*
-    struct file* f = NULL;
-	struct thread* t= thread_current();
+	struct thread* t = thread_current();
 	struct list_elem* e;
 	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
 	{
 		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
 		if(fd == fd_struct->file_desc)
 		{
-			f= fd_struct->file_ptr;
+			list_remove(&fd_struct->file_elem);
+			file_close(fd_struct->file_ptr);
+			free(fd_struct);
 		}
-		
 	}
-	if(!f)
-	{
-		lock_release (&file_lock);
-		return -1;
-	}
-    */
+      
     lock_release(&file_lock);
 }
 
