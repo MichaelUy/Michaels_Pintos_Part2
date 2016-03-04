@@ -251,9 +251,29 @@ int read (int fd, void *buffer, unsigned size) {
     
     if (fd == 0)
     {
-		
+		//write read from keyboard
+		//input_getc();
 	}
-    
+	lock_acquire(&file_lock);
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_read(f, buffer, size);
+	lock_release(&filesys_lock);
+	return ret;
 }
 
 // write size bytes from buffer to the open file fd.
@@ -261,27 +281,105 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-	
-	get_user()
-	put_user(buffer, )
+	if(fd == 1)
+	{
+		//write  to console
+		//get_user();
+		//put_user(buffer, );
+	}
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_write(f, buffer, size);
+	lock_release(&filesys_lock);
+	return ret;
 	
     return -1;
 }
 
 // changes the next byte to be read or written
 void seek (int fd, unsigned position) {
-    return;
+	
+    lock_acquire(&file_lock);
+    struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(f)
+	{
+		file_seek(f,position);
+	}
+    lock_release(&file_lock);
 }
 
 // return the position of the next byte to be read or written
 unsigned tell (int fd) {
-    return (unsigned)-1;
+    lock_acquire(&file_lock);
+    struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release (&file_lock);
+		return -1;
+	}
+	unsigned ret = (unsigned) file_tell(f);
+    lock_release(&file_lock);
+    return ret;
 }
 
 // close file descriptor fd.
 // make sure to close all fds when a process ends
 void close (int fd) {
-    return;
+    lock_acquire(&file_lock);
+    /*
+    struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+		
+	}
+	if(!f)
+	{
+		lock_release (&file_lock);
+		return -1;
+	}
+    */
+    lock_release(&file_lock);
 }
 
 
