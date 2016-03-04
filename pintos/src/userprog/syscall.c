@@ -6,9 +6,19 @@
 
 static void syscall_handler (struct intr_frame *);
 
+struct lock file_lock;
+
+struct fds
+{
+	struct file* file_ptr;
+	struct list_elem file_elem;
+	int file_desc;
+};
+
 void syscall_init (void) 
 {
     intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+    lock_init (&file_lock);
 }
 
 uint32_t getArg(void** vp) {
@@ -162,43 +172,88 @@ pid_t exec (const char *cmd_line) {
 
 // Wait for a child process, and retrieve its exit status
 int wait (pid_t pid) {
-	thread *child = get_child(pid);
-	if(waited)			// if process has been waited on
+	struct thread* child = get_child(pid);
+	if(child->waited)			// if process has been waited on
 		return -1;
 	else 				// else set it to waited 
-		waited = 1;
+		child->waited = 1;
 	if(!child->exited)	
-		sema_down(child);
+		return process_wait(child->tid);
     return child->ret;
 }
 
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    return filesys_create(file, initial_size);
+	lock_acquire(&file_lock);
+	bool ret = filesys_create(file,initial_size);
+	lock_release(&file_lock);
+    return ret;
 }
 
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    return filesys_remove(file);
+    lock_acquire(&file_lock);
+	bool ret = filesys_remove(file);
+	lock_release(&file_lock);
+    return ret;
 }
 
 // open a file, and return a file descriptor
 int open (const char *file) {
-    return -1;
+    lock_acquire(&file_lock);
+    int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
+    struct fds *fd_struct; 						// and increments
+    struct file *f = filesys_open(file);
+    if(!f)
+    {
+		lock_release(&file_lock);
+		return -1;
+	}
+	fd_struct = malloc(sizeof *fd_struct);
+	fd_struct-> file_desc = file_desc;
+	fd_struct-> file_ptr = f;
+	list_push_back(&thread_current()->files, &fd_struct->file_elem);
+	int ret = fd_struct-> file_desc;	//returns file descriptor
+	lock_release(&file_lock);
+    return ret;
 }
 
 // returns the size in bytes of the file specified by the fd
 int filesize (int fd) {
-    return -1;
+	lock_acquire(&file_lock);
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_length(f);
+	lock_release(&file_lock)
+    return ret;
 }
 
 // read size bytes from the fd open into buffer
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    return -1;
+    
+    if (fd == 0)
+    {
+		
+	}
+    
 }
 
 // write size bytes from buffer to the open file fd.
