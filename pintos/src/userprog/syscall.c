@@ -6,9 +6,19 @@
 
 static void syscall_handler (struct intr_frame *);
 
+struct lock file_lock;
+
+struct fds
+{
+	struct file* file_ptr;
+	struct list_elem file_elem;
+	int file_desc;
+};
+
 void syscall_init (void) 
 {
     intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+    lock_init (&file_lock);
 }
 
 uint32_t getArg(void** vp) {
@@ -16,7 +26,32 @@ uint32_t getArg(void** vp) {
     *vp -= 4; // update esp
     return *d;
 }
-
+bool validate_addr(const void* uaddr);
+{
+	 return (uaddr< PHYS_BASE && pagdir_get_page(current_thread()-> pagedir, uaddr)
+}
+bool validate_buffer(const void* uaddr, off_t size)
+{
+	int i = 0;
+	void* addr = uaddr;
+	for(i =0; i<size; i++ addr++)
+	{
+		if(!validate_addr(addr))
+			return false;
+	}
+	return true;
+}
+bool validate_buffer(const void* uaddr, off_t size)
+{
+	int i = 0;
+	void* addr = uaddr;
+	for(i =0; i<size; i++ addr++)
+	{
+		if(!validate_addr(addr))
+			return false;
+	}
+	return true;
+}
 
 static void syscall_handler (struct intr_frame *f UNUSED) 
 {
@@ -128,60 +163,121 @@ pid_t exec (const char *cmd_line) {
 	struct thread *child = NULL;
 	struct list_elem *e;
 	// find child process
-	for (e= list_begin(&t->child_list);e!=list_end(&t->child_list); e= list_next(e))
-	{		
-		struct thread *c =list_entry (e, struct thread, child_elem);
-		if(ret == c->tid)
-		{
-			child = c;
-			break;
-		}
-    }// if there the thread does not have a child
+	child=get_child(ret);
+    // if there the thread does not have a child
     if(!child)
-		return ERROR;
-	else if(child->load_success = 1)
-	{
-		//if the child has not been loaded 
-	}
-	else if(child->load_success = 2)
-	{
-		// if the child has load failed
-	}
+		return -1;
     return (pid_t)-1;
 }
 
 // Wait for a child process, and retrieve its exit status
 int wait (pid_t pid) {
-    return -1;
+	struct thread* child = get_child(pid);
+	if(child->waited)			// if process has been waited on
+		return -1;
+	else 				// else set it to waited 
+		child->waited = 1;
+	if(!child->exited)	
+		return process_wait(child->tid);
+    return child->ret;
 }
 
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    return false;
+	lock_acquire(&file_lock);
+	bool ret = filesys_create(file,initial_size);
+	lock_release(&file_lock);
+    return ret;
 }
 
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    return false;
+    lock_acquire(&file_lock);
+	bool ret = filesys_remove(file);
+	lock_release(&file_lock);
+    return ret;
 }
 
 // open a file, and return a file descriptor
 int open (const char *file) {
-    return -1;
+    lock_acquire(&file_lock);
+    int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
+    struct fds *fd_struct; 						// and increments
+    struct file *f = filesys_open(file);
+    if(!f)
+    {
+		lock_release(&file_lock);
+		return -1;
+	}
+	fd_struct = malloc(sizeof *fd_struct);
+	fd_struct-> file_desc = file_desc;
+	fd_struct-> file_ptr = f;
+	list_push_back(&thread_current()->files, &fd_struct->file_elem);
+	int ret = fd_struct-> file_desc;	//returns file descriptor
+	lock_release(&file_lock);
+    return ret;
 }
 
 // returns the size in bytes of the file specified by the fd
 int filesize (int fd) {
-    return -1;
+	lock_acquire(&file_lock);
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_length(f);
+	lock_release(&file_lock)
+    return ret;
 }
 
 // read size bytes from the fd open into buffer
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    return -1;
+    if (fd == 0)
+    {
+		//write read from keyboard
+		char* buf = (char*)buffer;
+		unsigned i;
+		for(i=0;i<size;i++)
+		{
+			buf[i] = input_getc();
+		}
+	}
+	lock_acquire(&file_lock);
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_read(f, buffer, size);
+	lock_release(&filesys_lock);
+	return ret;
 }
 
 // write size bytes from buffer to the open file fd.
@@ -189,27 +285,101 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-	
-	get_user()
-	put_user(buffer, )
+	if(fd == 1)
+	{
+		//write  to console
+		putbuf(buffer,size);
+		return size;
+		//get_user				// whats the purpose of these?
+		//put_user(buffer, );
+	}
+	struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_write(f, buffer, size);
+	lock_release(&filesys_lock);
+	return ret;
 	
     return -1;
 }
 
 // changes the next byte to be read or written
 void seek (int fd, unsigned position) {
-    return;
+	
+    lock_acquire(&file_lock);
+    struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(f)
+	{
+		file_seek(f,position);
+	}
+    lock_release(&file_lock);
 }
 
 // return the position of the next byte to be read or written
 unsigned tell (int fd) {
-    return (unsigned)-1;
+    lock_acquire(&file_lock);
+    struct file* f = NULL;
+	struct thread* t= thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			f= fd_struct->file_ptr;
+		}
+	}
+	if(!f)
+	{
+		lock_release (&file_lock);
+		return -1;
+	}
+	unsigned ret = (unsigned) file_tell(f);
+    lock_release(&file_lock);
+    return ret;
 }
 
 // close file descriptor fd.
 // make sure to close all fds when a process ends
 void close (int fd) {
-    return;
+    lock_acquire(&file_lock);
+	struct thread* t = thread_current();
+	struct list_elem* e;
+	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+	{
+		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
+		if(fd == fd_struct->file_desc)
+		{
+			list_remove(&fd_struct->file_elem);
+			file_close(fd_struct->file_ptr);
+			free(fd_struct);
+		}
+	}
+      
+    lock_release(&file_lock);
 }
 
 

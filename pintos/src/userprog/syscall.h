@@ -10,6 +10,9 @@ typedef int pid_t;
 
 void syscall_init (void);
 
+bool validate_addr(const void* uddr);
+bool validate_buffer(const void* uaddr, off_t size);
+bool validate_string(const char* uaddr);
 void halt(void) NO_RETURN;
 void exit(int status) NO_RETURN;
 pid_t exec(const char *cmd_line);
@@ -23,6 +26,9 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close (int fd);
+bool validate_addr(const void* uddr);
+bool validate_buffer(const void* uaddr, off_t size);
+bool validate_string(const char* uaddr);
 
 uint32_t getArg(void**);
 
