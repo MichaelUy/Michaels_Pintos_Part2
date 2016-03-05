@@ -15,9 +15,12 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
 };
 
+
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef tid_t pid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -81,6 +84,19 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+
+// child struct
+struct child_t {
+    pid_t pid;
+    bool   wait;
+    bool   exit;
+    int    ret;
+    struct list_elem elem;
+    struct semaphore exit_sema;
+};
+
+
 struct thread
 {
     /* Owned by thread.c. */

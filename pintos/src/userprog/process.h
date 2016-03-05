@@ -2,16 +2,6 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
-#include "userprog/syscall.h"
-
-struct child_t {
-    pid_t pid;
-    bool   wait;
-    bool   exit;
-    int    ret;
-    struct list_elem elem;
-    struct semaphore exit_sema;
-};
 
 tid_t process_execute (const char *file_name);
 
