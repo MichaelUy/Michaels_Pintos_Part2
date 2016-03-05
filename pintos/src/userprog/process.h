@@ -4,7 +4,7 @@
 #include "threads/thread.h"
 #include "userprog/syscall.h"
 
-struct child {
+struct child_t {
     pid_t pid;
     bool   wait;
     bool   exit;
@@ -19,7 +19,7 @@ int process_wait (pid_t);
 void process_exit (void);
 void process_activate (void);
 
-struct child* getChild(pid_t pid);
+struct child_t* getChild(pid_t pid);
 
 
 #endif /* userprog/process.h */

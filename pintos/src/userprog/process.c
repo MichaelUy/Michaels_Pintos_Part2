@@ -112,7 +112,7 @@ static void start_process (void *ehvp)
 
     if (success) {
         // setup dynamic child struct
-        t->cp = malloc(sizeof(struct child));
+        t->cp = malloc(sizeof(struct child_t));
         // init cp
         t->cp->pid  = t->tid;
         t->cp->wait = false;
@@ -145,12 +145,12 @@ static void start_process (void *ehvp)
 }
 
 
-struct child* getChild(pid_t pid) {
+struct child_t* getChild(pid_t pid) {
     struct list_elem* e;
-    struct child*     c;
+    struct child_t*     c;
     struct thread*    t = thread_current();
     for (e = list_begin(&t->children); e != list_end(&t->children); e = list_next(e)) {
-        c = list_entry(e, struct child, elem);
+        c = list_entry(e, struct child_t, elem);
         if (c->pid == pid) return c;
     }
     return NULL;
@@ -168,7 +168,7 @@ struct child* getChild(pid_t pid) {
    does nothing. */
 int process_wait (pid_t pid) 
 {
-    struct child* c = getChild(pid);
+    struct child_t* c = getChild(pid);
     if (!c) return -1;
     return 0;
 }
