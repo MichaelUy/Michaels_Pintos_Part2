@@ -204,8 +204,6 @@ thread_create (const char *name, int priority,
     sf->eip = switch_entry;
     sf->ebp = 0;
 
-    if (!aux) *((struct thread**)aux) = t;
-
     intr_set_level (old_level);
 
     /* Add to run queue. */
@@ -385,7 +383,7 @@ thread_get_recent_cpu (void)
     /* Not yet implemented. */
     return 0;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -472,12 +470,20 @@ init_thread (struct thread *t, const char *name, int priority)
     t->priority = priority;
     t->magic = THREAD_MAGIC;
 
-    // no open files
-    for(char i = 0; i < 16; ++i) {
-        t->files[i] = NULL;
-    }
+    // lists
     list_init(&t->children);
-    t->loaded = false;
+    list_init(&t->files);
+
+    // starting fd
+    t->fd = 2;
+
+    // no parent
+    t->parent = 0;
+
+    // no executable loaded yet
+    t->program = NULL;
+    // no child struct allocated yet
+    t->cp     = NULL;
 
     list_push_back (&all_list, &t->allelem);
 }
@@ -595,3 +601,20 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+
+struct thread* thread_get(tid_t tid) {
+    struct list_elem* e;
+    struct thread*    t;
+    for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+        t = list_entry(e, struct thread, allelem);
+        if (t->tid == tid)
+            return t;
+    }
+    return NULL;
+}
+
+
+
+

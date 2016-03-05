@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -83,31 +84,32 @@ typedef int tid_t;
 struct thread
 {
     /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list. */
+    tid_t tid;                      /* Thread identifier. */
+    enum thread_status status;      /* Thread state. */
+    char name[16];                  /* Name (for debugging purposes). */
+    uint8_t *stack;                 /* Saved stack pointer. */
+    int priority;                   /* Priority. */
+    struct list_elem allelem;       /* List element for all threads list. */
 
-	struct file files[16];              /* store fd and file* data. only 16 open files are allowed (including stdin and stdout) */
+    struct list files;              /* list of files */
+    struct list children;           /* list of children */
 
-	struct thread* parent;              /* parent thread */
-	struct list children;               /* list of children */
-	struct list_elem child_elem;        /* child list element */
+    struct child* cp;               /* pointer to own child struct */
+    tid_t  parent;                  /* parent thread id */
+    int    fd;                      /* next available file descriptor */
 
-	bool loaded;                        /* is the process loaded yet? */
+    struct file*  program;          /* executable file */
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+    struct list_elem elem;          /* List element. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+    uint32_t *pagedir;              /* Page directory. */
 #endif
 
     /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
+    unsigned magic;                 /* Detects stack overflow. */
 };
 
 /* If false (default), use round-robin scheduler.
@@ -127,9 +129,9 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
-struct thread *thread_current (void);
+struct thread* thread_current (void);
 tid_t thread_tid (void);
-const char *thread_name (void);
+const char* thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
@@ -145,5 +147,9 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+struct thread* thread_get(tid_t);
+
+
 
 #endif /* threads/thread.h */
