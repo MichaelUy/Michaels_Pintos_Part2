@@ -14,6 +14,7 @@
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
@@ -21,14 +22,20 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+void copyName(char* d, const char* s);
 
 struct exec_helper 
 {
-    const char          *cmdline;  //## Program to load (entire command line)
-    struct semaphore    sema;
+    struct semaphore    load;
+    struct thread*      child;
     bool                success;
-    //## Add other stuff you need to transfer between process_execute and process_start
-    //   (hint, think of the children... need a way to add to the child's list, see below about thread's child list.)
+    const char*         cmdline;
+};
+
+struct pfile {
+    int     fd;
+    struct  file* fp;
+    struct  list_elem le;
 };
 
 void copyName(char* d, const char* s) {
@@ -52,54 +59,80 @@ void copyName(char* d, const char* s) {
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (const char* fName)
 {
-    // new thread stuff
-    tid_t tid;
+    // TODO: use the local helper struct. It solves all kinds of problems.....
+    struct thread* t = thread_current();
     char pName[16];
-    struct thread* t;
-    struct semaphore sema;
+    struct exec_helper eh;
+    tid_t tid = TID_ERROR;
 
+    // init exec helper
+    eh.cmdline = fName;
+    sema_init(&eh.load, 0);
+    eh.success = false;
+
+    // copy thread name
     copyName(pName, fName);
-    sema_init(&sema,1);
 
     /* Create a new thread to execute FILE_NAME. */
-    // Look in thread_create, f->aux is set to thread_create aux which would be exec.
-    // So make good use of exec helper!
-    tid = thread_create (pName, PRI_DEFAULT, start_process, (void*)(&t));
+    tid = thread_create (pName, PRI_DEFAULT, start_process, &eh);
     if (tid != TID_ERROR)
     {  
-        sema_down(&sema);
-        /*##Down a semaphore for loading (where should you up it?)
-         ##If program load successfull, add new child to the list of this thread's
-         children (mind your list_elems)... we need to check this list in process wait,
-         when children are done, process wait can finish... see process wait...
-         ##else TID_ERROR
-        // */
-         list_insert(thread_current()->child_list, elem, &struct list_elem
-         list_push_back(thread_current()->
+        // wait for child to load
+        sema_down(&eh.load);
+        if (eh.success) {
+            // succeeded! yay! add to our child list
+            list_push_back(&t->children, &eh.child->cp->elem);
+            // also set child's parent to be us
+            eh.child->parent = t->tid;
+        } else {
+            // failed. boo. destroy tid
+            tid = TID_ERROR;
+        }
     }
-    // palloc_free_page (fn_copy);
+
     return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
-static void start_process (void *file_name_)
+static void start_process (void *ehvp)
 {
-    char *file_name = file_name_;
+    struct thread* t = thread_current();
     struct intr_frame if_;
     bool success;
+
+    struct exec_helper* eh = (struct exec_helper*)ehvp;
 
     /* Initialize interrupt frame and load executable. */
     memset (&if_, 0, sizeof if_);
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
-    success = load (file_name, &if_.eip, &if_.esp);
+    success = load (eh->cmdline, &if_.eip, &if_.esp);
 
+    if (success) {
+        // setup dynamic child struct
+        t->cp = malloc(sizeof(struct child));
+        // init cp
+        t->cp->pid  = t->tid;
+        t->cp->wait = false;
+        t->cp->exit = false;
+        sema_init(&t->cp->exit_sema, 0);
+    }
+
+    // did the load succeed?
+    eh->success = success;
+    // what is the child process?
+    eh->child = t;
+    // continue process_execute
+    sema_up(&eh->load);
+
+
+    // ENDGAME:
     /* If load failed, quit. */
-    palloc_free_page (file_name);
     if (!success) 
         thread_exit ();
+
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -111,6 +144,19 @@ static void start_process (void *file_name_)
     NOT_REACHED ();
 }
 
+
+struct child* getChild(pid_t pid) {
+    struct list_elem* e;
+    struct child*     c;
+    struct thread*    t = thread_current();
+    for (e = list_begin(&t->children); e != list_end(&t->children); e = list_next(e)) {
+        c = list_entry(e, struct child, elem);
+        if (c->pid == pid) return c;
+    }
+    return NULL;
+}
+
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -120,9 +166,11 @@ static void start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait (tid_t child_tid UNUSED) 
+int process_wait (pid_t pid) 
 {
-    return -1;
+    struct child* c = getChild(pid);
+    if (!c) return -1;
+    return 0;
 }
 
 /* Free the current process's resources. */
@@ -134,7 +182,7 @@ void process_exit (void)
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
     pd = cur->pagedir;
-    if (pd != NULL) 
+    if (pd) 
     {
         /* Correct ordering here is crucial.  We must set
            cur->pagedir to NULL before switching page directories,
@@ -227,7 +275,8 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, const char*);
+bool setupMainArgs(void** esp, const char* cmdline);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
         uint32_t read_bytes, uint32_t zero_bytes,
@@ -241,12 +290,10 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file name to cmd_line
 {
     struct thread *t = thread_current();
-    //##char file_name[NAME_MAX + 2];    ##Add a file name variable here, the file_name and cmd_line are DIFFERENT! 
     struct Elf32_Ehdr ehdr;
     struct file *file = NULL;
     off_t file_ofs;
     bool success = false;
-    //##char* charPointer;		##Add this for parsing!
     int i;
 
     /* Allocate and activate page directory. */
@@ -255,29 +302,17 @@ bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file
         goto done;
     process_activate ();
 
-    //## Use strtok_r to remove file_name from cmd_line
-
-
-
-
-
-
-
-
-
-
-
     /* Open executable file. */
-    //## Set the thread's bin file to this as well!
     // It is super helpful to have each thread have a pointer to the file
     // they are using for when you need to close it in process_exit
-    file = filesys_open(file_name);
+    file = filesys_open(t->name);
     if (file == NULL) 
     {
-        printf ("load: %s: open failed\n", file_name);
+        printf ("load: %s: open failed\n", t->name);
         goto done; 
     }
     file_deny_write(file);
+    t->program = file;
 
     /* Read and verify executable header. */
     if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -288,7 +323,7 @@ bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file
             || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
             || ehdr.e_phnum > 1024) 
     {
-        printf ("load: %s: error loading executable\n", file_name);
+        printf ("load: %s: error loading executable\n", t->name);
         goto done; 
     }
 
@@ -352,7 +387,7 @@ bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file
     }
 
     /* Set up stack. */
-    if (!setup_stack(esp, cmdline))    //##Add cmd_line to setup_stack param here, also change setup_stack
+    if (!setup_stack(esp, cmdline))
         goto done;
 
     /* Start address. */
@@ -362,7 +397,7 @@ bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file
 
 done:
     /* We arrive here whether the load is successful or not. */
-    file_close (file);		//##Remove this!!!!!!!!Since thread has its own file, close it when process is done (hint: in process exit.
+    if (!success) file_close (file);
     return success;
 }
 
@@ -473,13 +508,14 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 
-bool setupMainArgs(void** vsp, const char* cmdline) {
+bool setupMainArgs(void** esp, const char* cmdline) {
+    // go backwards
 }
 
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-static bool setup_stack(void** esp, char* cmdline)
+static bool setup_stack(void** esp, const char* cmdline)
 {
     uint8_t* kpage;
     bool success = false;
