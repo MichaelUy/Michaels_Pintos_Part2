@@ -3,20 +3,30 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include "userprog/process.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
+bool validate_addr(const void* uddr);
+bool validate_buffer(const void* uaddr, off_t size);
+bool validate_string(const char* uaddr);
+uint32_t getArg(void**);
+struct file* getFileP(int);
 
 struct lock file_lock;
 
-struct fds
-{
-	struct file* file_ptr;
-	struct list_elem file_elem;
-	int file_desc;
+struct fds {
+    int file_desc;
+    struct file* file_ptr;
+    struct list_elem elem;
 };
 
-void syscall_init (void) 
-{
+void syscall_init (void) {
     intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
     lock_init (&file_lock);
 }
@@ -26,36 +36,33 @@ uint32_t getArg(void** vp) {
     *vp -= 4; // update esp
     return *d;
 }
-bool validate_addr(const void* uaddr);
-{
-	 return (uaddr< PHYS_BASE && pagdir_get_page(current_thread()-> pagedir, uaddr)
+
+bool validate_addr(const void* uaddr) {
+     return !uaddr &&
+            uaddr < PHYS_BASE &&
+            pagedir_get_page(thread_current()->pagedir, uaddr);
 }
-bool validate_buffer(const void* uaddr, off_t size)
-{
-	int i = 0;
-	void* addr = uaddr;
-	for(i =0; i<size; i++ addr++)
-	{
-		if(!validate_addr(addr))
-			return false;
-	}
-	return true;
+
+bool validate_buffer(const void* uaddr, off_t size) {
+    int i;
+    for (i = 0; i < size; ++i, ++uaddr) {
+        if (!validate_addr(uaddr))
+            return false;
+    }
+    return true;
 }
-bool validate_buffer(const void* uaddr, off_t size)
-{
-	int i = 0;
-	void* addr = uaddr;
-	for(i =0; i<size; i++ addr++)
-	{
-		if(!validate_addr(addr))
-			return false;
-	}
-	return true;
+
+bool validate_string(const char* uaddr) {
+    int i;
+    for(i = 0; *uaddr != '\0'; ++i, ++uaddr) {
+        if(!validate_addr(uaddr))
+            return false;
+    }
+    return true;
 }
 
 static void syscall_handler (struct intr_frame *f UNUSED) 
 {
-    // thread_exit ();
     int x, y;
     char* cp;
     void* vp;
@@ -135,19 +142,14 @@ void halt (void) {
 
 // terminates the user program, returning status to the kernel
 void exit (int status) {
-	struct thread *t = thread_current();
-	if(parent) // if child
-	{
-		struct list_elem *e = list_begin (&all_list);
-		while(e != list_end (&all_list)) // look at all threads
-		{
-			struct thread* t = list_entry(e,struct thread,allelem);
-			if (t->tid == pid)		// if the parent is alive
-			    t->status = status; // sets  status
-			e = list_next(e))
-		}
+    struct thread *t = thread_current();
+    // if parent still exists, and we have a struct child_t*, set return value
+    if (thread_get(t->parent) && t->cp) {
+        t->cp->ret = status;
     }
     printf ("%s: exit(%d)\n",t->name,status);
+    // thread_exit (when run by user) will call process_execute to get
+    // rid of all process-related stuff
     thread_exit();
 }
 
@@ -158,89 +160,76 @@ void exit (int status) {
 // from the exec until it knows whether the child process successfully loaded
 // its executable. You must use appropriate synchronization to ensure this. 
 pid_t exec (const char *cmd_line) {
-	tid_t ret = process_execute(cmd_line);
-	struct thread *t = thread_current();
-	struct thread *child = NULL;
-	struct list_elem *e;
-	// find child process
-	child=get_child(ret);
-    // if there the thread does not have a child
-    if(!child)
-		return -1;
-    return (pid_t)-1;
+    return process_execute(cmd_line);
 }
 
 // Wait for a child process, and retrieve its exit status
 int wait (pid_t pid) {
-	struct thread* child = get_child(pid);
-	if(child->waited)			// if process has been waited on
-		return -1;
-	else 				// else set it to waited 
-		child->waited = 1;
-	if(!child->exited)	
-		return process_wait(child->tid);
-    return child->ret;
+    return process_wait(pid);
 }
 
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-	lock_acquire(&file_lock);
-	bool ret = filesys_create(file,initial_size);
-	lock_release(&file_lock);
+    if (!validate_string(file)) return -1;
+    lock_acquire(&file_lock);
+    bool ret = filesys_create(file, initial_size);
+    lock_release(&file_lock);
     return ret;
 }
 
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
+    if (!validate_string(file)) return -1;
     lock_acquire(&file_lock);
-	bool ret = filesys_remove(file);
-	lock_release(&file_lock);
+    bool ret = filesys_remove(file);
+    lock_release(&file_lock);
     return ret;
 }
 
 // open a file, and return a file descriptor
 int open (const char *file) {
+    if (!validate_string(file)) return -1;
     lock_acquire(&file_lock);
     int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
-    struct fds *fd_struct; 						// and increments
-    struct file *f = filesys_open(file);
-    if(!f)
-    {
-		lock_release(&file_lock);
-		return -1;
-	}
-	fd_struct = malloc(sizeof *fd_struct);
-	fd_struct-> file_desc = file_desc;
-	fd_struct-> file_ptr = f;
-	list_push_back(&thread_current()->files, &fd_struct->file_elem);
-	int ret = fd_struct-> file_desc;	//returns file descriptor
-	lock_release(&file_lock);
-    return ret;
+    struct fds* fdsp;                       // and increments
+    struct file* f = filesys_open(file);
+    if(!f) {
+        lock_release(&file_lock);
+        return -1;
+    }
+    fdsp = (struct fds*)malloc(sizeof(fdsp));
+    ASSERT(fdsp);
+    fdsp->file_desc = file_desc;
+    fdsp->file_ptr  = f;
+    list_push_back(&thread_current()->files, &fdsp->elem);
+    lock_release(&file_lock);
+    return file_desc;
+}
+
+
+struct file* getFileP(int fd) {
+    struct fds*  fdsp = NULL;
+    struct thread* t = thread_current();
+    struct list_elem* e = NULL;
+    for(e = list_begin(&t->files); e != list_end(&t->files); e = list_next(e)) {
+        fdsp = list_entry(e, struct fds, elem);
+        if (fdsp->file_desc == fd) return fdsp->file_ptr;
+    }
+    return NULL;
 }
 
 // returns the size in bytes of the file specified by the fd
 int filesize (int fd) {
-	lock_acquire(&file_lock);
-	struct file* f = NULL;
-	struct thread* t= thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			f= fd_struct->file_ptr;
-		}
-	}
-	if(!f)
-	{
-		lock_release(&file_lock);
-		return -1;
-	}
-	int ret = file_length(f);
-	lock_release(&file_lock)
+    lock_acquire(&file_lock);
+    struct file* f = getFileP(fd);
+    if(!f) {
+        lock_release(&file_lock);
+        return -1;
+    }
+    int ret = file_length(f);
+    lock_release(&file_lock);
     return ret;
 }
 
@@ -248,36 +237,25 @@ int filesize (int fd) {
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
+    if (!validate_buffer(buffer, size)) return 0;
     if (fd == 0)
     {
-		//write read from keyboard
-		char* buf = (char*)buffer;
-		unsigned i;
-		for(i=0;i<size;i++)
-		{
-			buf[i] = input_getc();
-		}
-	}
-	lock_acquire(&file_lock);
-	struct file* f = NULL;
-	struct thread* t= thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			f= fd_struct->file_ptr;
-		}
-	}
-	if(!f)
-	{
-		lock_release(&file_lock);
-		return -1;
-	}
-	int ret = file_read(f, buffer, size);
-	lock_release(&filesys_lock);
-	return ret;
+        //write read from keyboard
+        unsigned i;
+        for(i = 0; i < size; i++)
+        {
+            ((char*)buffer)[i] = input_getc();
+        }
+    }
+    lock_acquire(&file_lock);
+    struct file* f = getFileP(fd);
+    if(!f) {
+        lock_release(&file_lock);
+        return -1;
+    }
+    int ret = file_read(f, buffer, size);
+    lock_release(&file_lock);
+    return ret;
 }
 
 // write size bytes from buffer to the open file fd.
@@ -285,79 +263,44 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-	if(fd == 1)
-	{
-		//write  to console
-		putbuf(buffer,size);
-		return size;
-		//get_user				// whats the purpose of these?
-		//put_user(buffer, );
-	}
-	struct file* f = NULL;
-	struct thread* t= thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			f= fd_struct->file_ptr;
-		}
-	}
-	if(!f)
-	{
-		lock_release(&file_lock);
-		return -1;
-	}
-	int ret = file_write(f, buffer, size);
-	lock_release(&filesys_lock);
-	return ret;
-	
-    return -1;
+    if (!validate_buffer(buffer, size)) return 0;
+    if(fd == 1) {
+        //write  to console
+        putbuf(buffer, size);
+        return size;
+    }
+    struct file* f = getFileP(fd);
+    if(!f) {
+        lock_release(&file_lock);
+        return -1;
+    }
+    int ret = file_write(f, buffer, size);
+    lock_release(&file_lock);
+    return ret;
 }
 
 // changes the next byte to be read or written
 void seek (int fd, unsigned position) {
-	
+    
     lock_acquire(&file_lock);
-    struct file* f = NULL;
-	struct thread* t= thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			f= fd_struct->file_ptr;
-		}
-	}
-	if(f)
-	{
-		file_seek(f,position);
-	}
+    struct file* f = getFileP(fd);
+    if(f)
+    {
+        file_seek(f, position);
+    }
     lock_release(&file_lock);
 }
 
 // return the position of the next byte to be read or written
 unsigned tell (int fd) {
     lock_acquire(&file_lock);
-    struct file* f = NULL;
-	struct thread* t= thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			f= fd_struct->file_ptr;
-		}
-	}
-	if(!f)
-	{
-		lock_release (&file_lock);
-		return -1;
-	}
-	unsigned ret = (unsigned) file_tell(f);
+    struct file* f = getFileP(fd);
+    if(!f)
+    {
+        lock_release(&file_lock);
+        return -1;
+    }
+    unsigned ret = file_tell(f);
     lock_release(&file_lock);
     return ret;
 }
@@ -366,19 +309,18 @@ unsigned tell (int fd) {
 // make sure to close all fds when a process ends
 void close (int fd) {
     lock_acquire(&file_lock);
-	struct thread* t = thread_current();
-	struct list_elem* e;
-	for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
-	{
-		struct fds* fd_struct = list_entry(e, struct fds, file_elem);
-		if(fd == fd_struct->file_desc)
-		{
-			list_remove(&fd_struct->file_elem);
-			file_close(fd_struct->file_ptr);
-			free(fd_struct);
-		}
-	}
-      
+    struct thread* t = thread_current();
+    struct list_elem* e;
+    for(e = list_begin(&t->files);e != list_end(&t->files); e= list_next(e))
+    {
+        struct fds* fdsp = list_entry(e, struct fds, elem);
+        if(fdsp->file_desc == fd)
+        {
+            list_remove(&fdsp->elem);
+            file_close(fdsp->file_ptr);
+            free(fdsp);
+        }
+    }
     lock_release(&file_lock);
 }
 
