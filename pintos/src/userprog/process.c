@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -276,7 +277,7 @@ struct Elf32_Phdr
 #define PF_R 4          /* Readable. */
 
 static bool setup_stack (void **esp, const char*);
-bool setupMainArgs(void** esp, const char* cmdline);
+void setupMainArgs(void** sp, const char* cmdline);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
         uint32_t read_bytes, uint32_t zero_bytes,
@@ -508,8 +509,92 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 
-bool setupMainArgs(void** esp, const char* cmdline) {
-    // go backwards
+void __push(void** sp, const void* data, unsigned size) {
+    int i;
+    uint8_t* dst = *sp;
+    uint8_t* src = data;
+    for(i = 0; i < size; ++i)
+        dst[-(i+1)] = src[size-(i+1)];
+    *sp = (void*)(dst - size);
+}
+
+#define WORDS 0
+#define SPACE 1
+
+void setupMainArgs(void** sp, const char* cmdline) {
+    void* spOrig = *sp;
+    char* sptmpi;
+    char* sptmpj;
+    char* argv0;
+    int   argc = 0;
+
+    int i;
+    int sz = strlen(cmdline);
+
+    // copy the data in
+    __push(sp, cmdline, sz+1);
+
+    sptmpi = spOrig;
+    sptmpj = spOrig-2;
+    // start in space or letter mode
+    int mode = SPACE;
+    while (sptmpj <= *sp) {
+        switch(mode) {
+            case WORDS: // letters
+                if (isspace(*sptmpj)) {
+                    mode = SPACE;
+                } else {
+                    *--sptmpi = *sptmpj;
+                }
+                break;
+
+            case SPACE: // whitespace
+                if (!isspace(*sptmpj)) {
+                    *--sptmpi = '\0';
+                    *--sptmpi = *sptmpj;
+                    mode = WORDS;
+                }
+                break;
+        }
+        sptmpj--;
+    }
+
+    // store the address of argv[0] and change the sp location
+    *sp = argv0 = sptmpi;
+
+    i = 0;
+    if ((int)argv0 % 4) {
+        // word-align sp
+        __push(sp, &i, (int)sp % 4);
+    }
+
+    sptmpi = 0;
+    __push(sp, &sptmpi, sizeof(char*));
+
+    sptmpi = spOrig-1;
+    while (sptmpi --> argv0) {
+        if (*sptmpi == '\0') {
+            if (!argc) {
+                sptmpi++;
+                __push(sp, &sptmpi, sizeof(char*));
+                sptmpi--;
+            }
+            argc++;
+        }
+    }
+    // push argv[0]
+    __push(sp, &argv0, sizeof(char*));
+
+    // push argv
+    sptmpi = *sp;
+    __push(sp, &argv0, sizeof(char**));
+
+    // push argc
+    __push(sp, &argc, sizeof(int));
+
+    sptmpi = NULL;
+    // push return address
+    __push(sp, &sptmpi, sizeof(void*));
 }
 
 
@@ -525,7 +610,7 @@ static bool setup_stack(void** esp, const char* cmdline)
     {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
         if (success){
-            *esp = PHYS_BASE-1; // 0xbfffffff
+            *esp = PHYS_BASE; // 0xc0000000
             setupMainArgs(esp, cmdline);
         }
         else

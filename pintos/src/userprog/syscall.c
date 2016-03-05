@@ -12,6 +12,7 @@
 #include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
+void* get_physical(const void* uaddr);
 bool validate_addr(const void* uddr);
 bool validate_buffer(const void* uaddr, off_t size);
 bool validate_string(const char* uaddr);
@@ -37,10 +38,15 @@ uint32_t getArg(void** vp) {
     return *d;
 }
 
+void* get_physical(const void* uaddr) {
+    pagedir_get_page(thread_current()->pagedir, uaddr);
+}
+
+
 bool validate_addr(const void* uaddr) {
      return !uaddr &&
             uaddr < PHYS_BASE &&
-            pagedir_get_page(thread_current()->pagedir, uaddr);
+            get_physical(uaddr);
 }
 
 bool validate_buffer(const void* uaddr, off_t size) {
