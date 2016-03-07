@@ -60,11 +60,13 @@ void copyName(char* d, const char* s) {
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (const char* fName)
 {
-    // TODO: use the local helper struct. It solves all kinds of problems.....
-    struct thread* t = thread_current();
+    // if (!validate_string(fName))
+        // return TID_ERROR;
+
     char pName[16];
     struct exec_helper eh;
     tid_t tid = TID_ERROR;
+    struct thread* t = thread_current();
 
     // init exec helper
     eh.cmdline = fName;
@@ -93,7 +95,6 @@ tid_t process_execute (const char* fName)
 
     return tid;
 }
-
 /* A thread function that loads a user process and starts it
    running. */
 static void start_process (void *ehvp)
@@ -114,6 +115,7 @@ static void start_process (void *ehvp)
     if (success) {
         // setup dynamic child struct
         t->cp = malloc(sizeof(struct child_t));
+        ASSERT(t->cp);
         // init cp
         t->cp->pid  = t->tid;
         t->cp->wait = false;
@@ -152,7 +154,8 @@ struct child_t* getChild(pid_t pid) {
     struct thread*    t = thread_current();
     for (e = list_begin(&t->children); e != list_end(&t->children); e = list_next(e)) {
         c = list_entry(e, struct child_t, elem);
-        if (c->pid == pid) return c;
+        if (c->pid == pid)
+            return c;
     }
     return NULL;
 }
@@ -170,7 +173,8 @@ struct child_t* getChild(pid_t pid) {
 int process_wait (pid_t pid) 
 {
     struct child_t* c = getChild(pid);
-    if (!c) return -1;
+    if (!c)
+        return -1;
     return 0;
 }
 
@@ -206,7 +210,7 @@ void process_activate (void)
     struct thread *t = thread_current ();
 
     /* Activate thread's page tables. */
-    pagedir_activate (t->pagedir);
+    pagedir_activate(t->pagedir);
 
     /* Set thread's kernel stack for use in processing
        interrupts. */
@@ -298,7 +302,7 @@ bool load (const char* cmdline, void (**eip) (void), void **esp) //##Change file
     int i;
 
     /* Allocate and activate page directory. */
-    t->pagedir = pagedir_create ();
+    t->pagedir = pagedir_create();
     if (t->pagedir == NULL) 
         goto done;
     process_activate ();
@@ -538,7 +542,7 @@ void setupMainArgs(void** sp, const char* cmdline) {
     sptmpj = spOrig-2;
     // start in space or letter mode
     int mode = SPACE;
-    while (sptmpj <= *sp) {
+    while (sptmpj >= *sp) {
         switch(mode) {
             case WORDS: // letters
                 if (isspace(*sptmpj)) {
@@ -563,9 +567,10 @@ void setupMainArgs(void** sp, const char* cmdline) {
     *sp = argv0 = sptmpi;
 
     i = 0;
-    if ((int)argv0 % 4) {
+    printf("word aligning by %d...\n", (unsigned)*sp % 4);
+    if ((unsigned)*sp % 4) {
         // word-align sp
-        __push(sp, &i, (int)sp % 4);
+        __push(sp, &i, (unsigned)*sp % 4);
     }
 
     sptmpi = 0;
@@ -583,11 +588,12 @@ void setupMainArgs(void** sp, const char* cmdline) {
         }
     }
     // push argv[0]
+    argc++;
     __push(sp, &argv0, sizeof(char*));
 
     // push argv
     sptmpi = *sp;
-    __push(sp, &argv0, sizeof(char**));
+    __push(sp, &sptmpi, sizeof(char**));
 
     // push argc
     __push(sp, &argc, sizeof(int));
@@ -596,6 +602,60 @@ void setupMainArgs(void** sp, const char* cmdline) {
     // push return address
     __push(sp, &sptmpi, sizeof(void*));
 }
+
+#ifndef HEXDUMP_COLS
+#define HEXDUMP_COLS 8
+#endif
+
+void hexdump(void *mem, unsigned int len)
+{
+    unsigned int diff = ((unsigned int)mem) % 16;
+    mem -= diff;
+    len += diff;
+
+    unsigned int i, j;
+
+    for(i = 0; i < len + ((len % HEXDUMP_COLS) ? (HEXDUMP_COLS - len % HEXDUMP_COLS) : 0); i++)
+    {
+        /* print offset */
+        if(i % HEXDUMP_COLS == 0)
+        {
+            printf("0x%06x: ", mem + i);
+        }
+
+        /* print hex data */
+        if(i < len)
+        {
+            printf("%02x ", 0xFF & ((char*)mem)[i]);
+        }
+        else /* end of block, just aligning for ASCII dump */
+        {
+            printf("   ");
+        }
+
+        /* print ASCII dump */
+        if(i % HEXDUMP_COLS == (HEXDUMP_COLS - 1))
+        {
+            for(j = i - (HEXDUMP_COLS - 1); j <= i; j++)
+            {
+                if(j >= len) /* end of block, not really printing */
+                {
+                    putchar(' ');
+                }
+                else if(isprint(((char*)mem)[j])) /* printable char */
+                {
+                    putchar(0xFF & ((char*)mem)[j]);        
+                }
+                else /* other char */
+                {
+                    putchar('.');
+                }
+            }
+            putchar('\n');
+        }
+    }
+}
+
 
 
 /* Create a minimal stack by mapping a zeroed page at the top of
@@ -609,13 +669,16 @@ static bool setup_stack(void** esp, const char* cmdline)
     if (kpage != NULL)
     {
         success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-        if (success){
+        if (success)
             *esp = PHYS_BASE; // 0xc0000000
-            setupMainArgs(esp, cmdline);
-        }
         else
             palloc_free_page (kpage);
     }
+
+    setupMainArgs(esp, cmdline);
+
+    hexdump(*esp - 16, 256);
+
     return success;
 }
 
@@ -630,12 +693,12 @@ static bool setup_stack(void** esp, const char* cmdline)
    if memory allocation fails. */
 static bool install_page (void *upage, void *kpage, bool writable)
 {
-    struct thread *t = thread_current ();
+    struct thread *t = thread_current();
 
     /* Verify that there's not already a page at that virtual
        address, then map our page there. */
-    return (pagedir_get_page (t->pagedir, upage) == NULL
-            && pagedir_set_page (t->pagedir, upage, kpage, writable));
+    return (pagedir_get_page(t->pagedir, upage) == NULL
+            && pagedir_set_page(t->pagedir, upage, kpage, writable));
 }
 
 

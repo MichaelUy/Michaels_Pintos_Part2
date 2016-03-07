@@ -23,4 +23,9 @@ void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close (int fd);
 
+void* get_physical(const void* uaddr);
+bool validate_addr(const void* uddr);
+bool validate_buffer(const void* uaddr, off_t size);
+bool validate_string(const char* uaddr);
+
 #endif /* userprog/syscall.h */

@@ -10,9 +10,9 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 #include "devices/shutdown.h"
+#include "threads/vaddr.h"
 
 static void syscall_handler (struct intr_frame *);
-void* get_physical(const void* uaddr);
 bool validate_addr(const void* uddr);
 bool validate_buffer(const void* uaddr, off_t size);
 bool validate_string(const char* uaddr);
@@ -34,19 +34,15 @@ void syscall_init (void) {
 
 uint32_t getArg(void** vp) {
     uint32_t* d = (uint32_t*)*vp;
-    *vp -= 4; // update esp
+    *vp += 4; // update esp
     return *d;
-}
-
-void* get_physical(const void* uaddr) {
-    pagedir_get_page(thread_current()->pagedir, uaddr);
 }
 
 
 bool validate_addr(const void* uaddr) {
-     return !uaddr &&
-            uaddr < PHYS_BASE &&
-            get_physical(uaddr);
+     return uaddr &&
+            is_user_vaddr(uaddr) &&
+            pagedir_get_page(thread_current()->pagedir, uaddr);
 }
 
 bool validate_buffer(const void* uaddr, off_t size) {
@@ -75,7 +71,7 @@ static void syscall_handler (struct intr_frame *f UNUSED)
     pid_t  p;
     unsigned u;
 
-    switch (f->vec_no) {
+    switch (getArg(f->esp)) {
         case SYS_HALT:
             halt();
             break;
@@ -134,7 +130,7 @@ static void syscall_handler (struct intr_frame *f UNUSED)
             close(x);
             break;
         default:
-            printf ("system call not implemented!\n");
+            printf ("system call [%d] not implemented!\n", f->vec_no);
     }
 }
 
@@ -177,7 +173,8 @@ int wait (pid_t pid) {
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file))
+        return -1;
     lock_acquire(&file_lock);
     bool ret = filesys_create(file, initial_size);
     lock_release(&file_lock);
@@ -187,7 +184,8 @@ bool create (const char *file, unsigned initial_size) {
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file))
+        return -1;
     lock_acquire(&file_lock);
     bool ret = filesys_remove(file);
     lock_release(&file_lock);
@@ -196,7 +194,8 @@ bool remove (const char *file) {
 
 // open a file, and return a file descriptor
 int open (const char *file) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file))
+        return -1;
     lock_acquire(&file_lock);
     int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
     struct fds* fdsp;                       // and increments
@@ -221,7 +220,8 @@ struct file* getFileP(int fd) {
     struct list_elem* e = NULL;
     for(e = list_begin(&t->files); e != list_end(&t->files); e = list_next(e)) {
         fdsp = list_entry(e, struct fds, elem);
-        if (fdsp->file_desc == fd) return fdsp->file_ptr;
+        if (fdsp->file_desc == fd)
+            return fdsp->file_ptr;
     }
     return NULL;
 }
@@ -243,7 +243,8 @@ int filesize (int fd) {
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size)) return 0;
+    if (!validate_buffer(buffer, size))
+        return 0;
     if (fd == 0)
     {
         //write read from keyboard
@@ -269,7 +270,8 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size)) return 0;
+    if (!validate_buffer(buffer, size))
+        return 0;
     if(fd == 1) {
         //write  to console
         putbuf(buffer, size);
