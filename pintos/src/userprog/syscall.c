@@ -48,8 +48,7 @@ bool validate_addr(const void* uaddr) {
 bool validate_buffer(const void* uaddr, off_t size) {
     int i;
     for (i = 0; i < size; ++i, ++uaddr) {
-        if (!validate_addr(uaddr))
-            return false;
+        if (!validate_addr(uaddr)) return false;
     }
     return true;
 }
@@ -57,8 +56,7 @@ bool validate_buffer(const void* uaddr, off_t size) {
 bool validate_string(const char* uaddr) {
     int i;
     for(i = 0; *uaddr != '\0'; ++i, ++uaddr) {
-        if(!validate_addr(uaddr))
-            return false;
+        if(!validate_addr(uaddr)) return false;
     }
     return true;
 }
@@ -71,7 +69,9 @@ static void syscall_handler (struct intr_frame *f UNUSED)
     pid_t  p;
     unsigned u;
 
-    switch (getArg(f->esp)) {
+    void* fesp = f->esp;
+
+    switch (getArg(&f->esp)) {
         case SYS_HALT:
             halt();
             break;
@@ -132,6 +132,8 @@ static void syscall_handler (struct intr_frame *f UNUSED)
         default:
             printf ("system call [%d] not implemented!\n", f->vec_no);
     }
+    // fix f->esp
+    f->esp = fesp;
 }
 
 
@@ -161,8 +163,10 @@ void exit (int status) {
 // program cannot load or run for any reason. The parent process cannot return
 // from the exec until it knows whether the child process successfully loaded
 // its executable. You must use appropriate synchronization to ensure this. 
-pid_t exec (const char *cmd_line) {
-    return process_execute(cmd_line);
+pid_t exec (const char *cmdline) {
+    if (!validate_string(cmdline)) return -1;
+    cmdline = pagedir_get_page(thread_current()->pagedir, cmdline);
+    return process_execute(cmdline);
 }
 
 // Wait for a child process, and retrieve its exit status
@@ -173,8 +177,8 @@ int wait (pid_t pid) {
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    if (!validate_string(file))
-        return -1;
+    if (!validate_string(file)) return -1;
+    file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     bool ret = filesys_create(file, initial_size);
     lock_release(&file_lock);
@@ -184,8 +188,8 @@ bool create (const char *file, unsigned initial_size) {
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    if (!validate_string(file))
-        return -1;
+    if (!validate_string(file)) return -1;
+    file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     bool ret = filesys_remove(file);
     lock_release(&file_lock);
@@ -194,13 +198,13 @@ bool remove (const char *file) {
 
 // open a file, and return a file descriptor
 int open (const char *file) {
-    if (!validate_string(file))
-        return -1;
+    if (!validate_string(file)) return -1;
+    file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
     struct fds* fdsp;                       // and increments
     struct file* f = filesys_open(file);
-    if(!f) {
+    if(f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -220,8 +224,7 @@ struct file* getFileP(int fd) {
     struct list_elem* e = NULL;
     for(e = list_begin(&t->files); e != list_end(&t->files); e = list_next(e)) {
         fdsp = list_entry(e, struct fds, elem);
-        if (fdsp->file_desc == fd)
-            return fdsp->file_ptr;
+        if (fdsp->file_desc == fd) return fdsp->file_ptr;
     }
     return NULL;
 }
@@ -230,7 +233,7 @@ struct file* getFileP(int fd) {
 int filesize (int fd) {
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(!f) {
+    if(f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -243,8 +246,8 @@ int filesize (int fd) {
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size))
-        return 0;
+    if (!validate_buffer(buffer, size)) return 0;
+    buffer = pagedir_get_page(thread_current()->pagedir, buffer);
     if (fd == 0)
     {
         //write read from keyboard
@@ -256,7 +259,7 @@ int read (int fd, void *buffer, unsigned size) {
     }
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(!f) {
+    if(f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -270,15 +273,15 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size))
-        return 0;
+    if (!validate_buffer(buffer, size)) return 0;
+    buffer = pagedir_get_page(thread_current()->pagedir, buffer);
     if(fd == 1) {
         //write  to console
         putbuf(buffer, size);
         return size;
     }
     struct file* f = getFileP(fd);
-    if(!f) {
+    if(f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -303,7 +306,7 @@ void seek (int fd, unsigned position) {
 unsigned tell (int fd) {
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(!f)
+    if(f)
     {
         lock_release(&file_lock);
         return -1;

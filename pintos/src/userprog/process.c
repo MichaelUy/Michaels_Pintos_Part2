@@ -567,7 +567,7 @@ void setupMainArgs(void** sp, const char* cmdline) {
     *sp = argv0 = sptmpi;
 
     i = 0;
-    printf("word aligning by %d...\n", (unsigned)*sp % 4);
+    // printf("word aligning by %d...\n", (unsigned)*sp % 4);
     if ((unsigned)*sp % 4) {
         // word-align sp
         __push(sp, &i, (unsigned)*sp % 4);
@@ -677,7 +677,9 @@ static bool setup_stack(void** esp, const char* cmdline)
 
     setupMainArgs(esp, cmdline);
 
-    hexdump(*esp - 16, 256);
+    // hexdump(*esp - 16, 256);
+
+    // hexdump(esp, 4);
 
     return success;
 }
