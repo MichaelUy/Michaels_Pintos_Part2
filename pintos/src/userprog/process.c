@@ -78,13 +78,18 @@ tid_t process_execute (const char* fName)
 
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create (pName, PRI_DEFAULT, start_process, &eh);
+    struct thread* c = thread_get(tid);
+
+    struct child_t* cp;
+    c->start = &cp;
+
     if (tid != TID_ERROR)
     {  
         // wait for child to load
         sema_down(&eh.load);
         if (eh.success) {
             // succeeded! yay! add to our child list
-            list_push_back(&t->children, &eh.child->cp->elem);
+            list_push_back(&t->children, &cp->elem);
             // also set child's parent to be us
             eh.child->parent = t->tid;
         } else {
@@ -116,6 +121,7 @@ static void start_process (void *ehvp)
         // setup dynamic child struct
         t->cp = malloc(sizeof(struct child_t));
         ASSERT(t->cp);
+        *t->start = t->cp;
         // init cp
         t->cp->pid  = t->tid;
         t->cp->wait = false;
@@ -129,7 +135,6 @@ static void start_process (void *ehvp)
     eh->child = t;
     // continue process_execute
     sema_up(&eh->load);
-
 
     // ENDGAME:
     /* If load failed, quit. */

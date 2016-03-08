@@ -478,12 +478,13 @@ init_thread (struct thread *t, const char *name, int priority)
     t->fd = 2;
 
     // no parent
-    t->parent = 0;
+    t->parent  = 0;
 
     // no executable loaded yet
     t->program = NULL;
     // no child struct allocated yet
-    t->cp     = NULL;
+    t->cp      = NULL;
+    t->start   = NULL;
 
     list_push_back (&all_list, &t->allelem);
 }

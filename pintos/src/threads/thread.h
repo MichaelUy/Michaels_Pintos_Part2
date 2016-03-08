@@ -110,6 +110,7 @@ struct thread
     struct list files;              /* list of files */
     struct list children;           /* list of children */
 
+    struct child_t** start;         /* pass cp to process_execute */
     struct child_t* cp;             /* pointer to own child struct */
     tid_t  parent;                  /* parent thread id */
     int    fd;                      /* next available file descriptor */
