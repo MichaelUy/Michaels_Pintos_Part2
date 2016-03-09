@@ -184,10 +184,11 @@ int process_wait (pid_t pid)
 {
     struct child_t* c = getChild(pid);
     if (!c) return -1;
-    else if (c->wait) return -1;
-    else if (c->exit) return c->ret;
+    if (c->wait) return -1;
+    c->wait = true;
+
+    if (c->exit) return c->ret;
     else {
-        c->wait = true;
         sema_down(&c->exit_sema);
         return c->ret;
     }
@@ -221,7 +222,6 @@ void process_exit (void) {
 
     if (t->cp) { // if parent hasn't exited, basically
         t->cp->exit = true;
-        t->cp->ret  = 0;
         // if being waited on, signal
         if (t->cp->wait) {
             sema_up(&t->cp->exit_sema);
