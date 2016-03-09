@@ -70,7 +70,9 @@ tid_t process_execute (const char* fName)
     struct thread* t = thread_current();
 
     // init exec helper
-    eh.cmdline = fName;
+    eh.cmdline = malloc(strlen(fName)+1);
+    strlcpy(eh.cmdline, fName, strlen(fName)+1);
+
     sema_init(&eh.load, 0);
     eh.success = false;
 
@@ -98,6 +100,8 @@ tid_t process_execute (const char* fName)
             tid = TID_ERROR;
         }
     }
+
+    free(eh.cmdline);
 
     return tid;
 }
