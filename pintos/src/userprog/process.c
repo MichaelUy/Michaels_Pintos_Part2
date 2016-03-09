@@ -64,7 +64,7 @@ tid_t process_execute (const char* fName)
     // if (!validate_string(fName))
         // return TID_ERROR;
 
-    if (thread_current()->tid > 20) return -1;
+    if (thread_current()->tid > 30) return -1;
     char pName[16];
     struct exec_helper eh;
     tid_t tid = TID_ERROR;
