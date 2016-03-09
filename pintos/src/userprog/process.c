@@ -211,7 +211,7 @@ void process_exit (void) {
         nexte = list_next(e);
         struct child_t* child = list_entry(e, struct child_t, elem);
         list_remove(&child->elem);
-        thread_get(child->pid)->cp = NULL;
+        if (!child->exit) thread_get(child->pid)->cp = NULL;
         free(child);
     }
 
