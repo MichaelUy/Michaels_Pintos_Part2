@@ -191,15 +191,15 @@ int process_wait (pid_t pid)
 
 
 /* Free the current process's resources. */
-void process_exit (void)
-{
+void process_exit (void) {
     struct thread *t = thread_current();
     struct list_elem* e;
+    struct list_elem* nexte;
     uint32_t* pd;
 
     // get rid of open files
-    for(e = list_begin(&t->files); e != list_end(&t->files); e = list_next(e))
-    {
+    for(e = list_begin(&t->files); e != list_end(&t->files); e = nexte) {
+        nexte = list_next(e);
         struct fds* fdsp = list_entry(e, struct fds, elem);
         list_remove(&fdsp->elem);
         file_close(fdsp->file_ptr);
@@ -207,18 +207,21 @@ void process_exit (void)
     }
 
     // get rid of children pointers
-    for(e = list_begin(&t->children); e != list_end(&t->children); e = list_next(e))
-    {
+    for(e = list_begin(&t->children); e != list_end(&t->children); e = nexte) {
+        nexte = list_next(e);
         struct child_t* child = list_entry(e, struct child_t, elem);
         list_remove(&child->elem);
+        thread_get(child->pid)->cp = NULL;
         free(child);
     }
 
-    t->cp->exit = true;
-    t->cp->ret  = 0;
-    // if being waited on, signal
-    if (t->cp->wait) {
-        sema_up(&t->cp->exit_sema);
+    if (t->cp) { // if parent hasn't exited, basically
+        t->cp->exit = true;
+        t->cp->ret  = 0;
+        // if being waited on, signal
+        if (t->cp->wait) {
+            sema_up(&t->cp->exit_sema);
+        }
     }
 
     /* Destroy the current process's page directory and switch back
