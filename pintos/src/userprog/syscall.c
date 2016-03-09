@@ -54,6 +54,7 @@ bool validate_buffer(const void* uaddr, off_t size) {
 }
 
 bool validate_string(const char* uaddr) {
+    if (!uaddr) return false;
     int i;
     for(i = 0; *uaddr != '\0'; ++i, ++uaddr) {
         if(!validate_addr(uaddr)) return false;
