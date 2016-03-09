@@ -277,6 +277,7 @@ int write (int fd, const void *buffer, unsigned size) {
         putbuf(buffer, size);
         return size;
     }
+    lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
     if (!f) {
         lock_release(&file_lock);
@@ -292,7 +293,7 @@ void seek (int fd, unsigned position) {
     
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if (!f)
+    if (f)
     {
         file_seek(f, position);
     }
