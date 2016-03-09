@@ -144,7 +144,7 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
+  if (not_present = (f->error_code & PF_P) == 0) exit(-1);
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 

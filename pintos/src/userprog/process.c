@@ -189,6 +189,7 @@ int process_wait (pid_t pid)
     else {
         c->wait = true;
         sema_down(&c->exit_sema);
+        c->wait = false;
         return c->ret;
     }
 }
