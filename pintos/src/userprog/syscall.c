@@ -21,12 +21,6 @@ struct file* getFileP(int);
 
 struct lock file_lock;
 
-struct fds {
-    int file_desc;
-    struct file* file_ptr;
-    struct list_elem elem;
-};
-
 void syscall_init (void) {
     intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
     lock_init (&file_lock);

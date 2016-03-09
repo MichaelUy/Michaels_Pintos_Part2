@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "userprog/gdt.h"
-#include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -178,20 +179,51 @@ struct child_t* getChild(pid_t pid) {
 int process_wait (pid_t pid) 
 {
     struct child_t* c = getChild(pid);
-    if (!c)
-        return -1;
-    return 0;
+    if (!c) return -1;
+    else if (c->wait) return -1;
+    else if (c->exit) return c->ret;
+    else {
+        c->wait = true;
+        sema_down(&c->exit_sema);
+        return c->ret;
+    }
 }
+
 
 /* Free the current process's resources. */
 void process_exit (void)
 {
-    struct thread *cur = thread_current ();
-    uint32_t *pd;
+    struct thread *t = thread_current();
+    struct list_elem* e;
+    uint32_t* pd;
+
+    // get rid of open files
+    for(e = list_begin(&t->files); e != list_end(&t->files); e = list_next(e))
+    {
+        struct fds* fdsp = list_entry(e, struct fds, elem);
+        list_remove(&fdsp->elem);
+        file_close(fdsp->file_ptr);
+        free(fdsp);
+    }
+
+    // get rid of children pointers
+    for(e = list_begin(&t->children); e != list_end(&t->children); e = list_next(e))
+    {
+        struct child_t* child = list_entry(e, struct child_t, elem);
+        list_remove(&child->elem);
+        free(child);
+    }
+
+    t->cp->exit = true;
+    t->cp->ret  = 0;
+    // if being waited on, signal
+    if (t->cp->wait) {
+        sema_up(&t->cp->exit_sema);
+    }
 
     /* Destroy the current process's page directory and switch back
        to the kernel-only page directory. */
-    pd = cur->pagedir;
+    pd = t->pagedir;
     if (pd) 
     {
         /* Correct ordering here is crucial.  We must set
@@ -201,7 +233,7 @@ void process_exit (void)
            directory before destroying the process's page
            directory, or our active page directory will be one
            that's been freed (and cleared). */
-        cur->pagedir = NULL;
+        t->pagedir = NULL;
         pagedir_activate (NULL);
         pagedir_destroy (pd);
     }

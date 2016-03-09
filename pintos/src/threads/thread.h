@@ -88,7 +88,7 @@ typedef tid_t pid_t;
 
 // child struct
 struct child_t {
-    pid_t pid;
+    pid_t  pid;
     bool   wait;
     bool   exit;
     int    ret;

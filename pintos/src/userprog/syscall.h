@@ -7,6 +7,12 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
+struct fds {
+    int file_desc;
+    struct file* file_ptr;
+    struct list_elem elem;
+};
+
 void syscall_init (void);
 
 void halt(void) NO_RETURN;
