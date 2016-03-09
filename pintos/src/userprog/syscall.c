@@ -145,7 +145,7 @@ void halt (void) {
 void exit (int status) {
     struct thread *t = thread_current();
     // if parent still exists, and we have a struct child_t*, set return value
-    if (thread_get(t->parent) && t->cp) {
+    if (t->cp) {
         t->cp->ret = status;
     }
     printf ("%s: exit(%d)\n",t->name,status);

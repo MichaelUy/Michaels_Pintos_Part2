@@ -221,7 +221,6 @@ void process_exit (void) {
 
     if (t->cp) { // if parent hasn't exited, basically
         t->cp->exit = true;
-        t->cp->ret  = 0;
         // if being waited on, signal
         if (t->cp->wait) {
             sema_up(&t->cp->exit_sema);
