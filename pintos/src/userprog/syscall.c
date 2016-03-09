@@ -203,7 +203,7 @@ int open (const char *file) {
     int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
     struct fds* fdsp;                       // and increments
     struct file* f = filesys_open(file);
-    if(f) {
+    if (!f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -232,7 +232,7 @@ struct file* getFileP(int fd) {
 int filesize (int fd) {
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(f) {
+    if (!f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -257,7 +257,7 @@ int read (int fd, void *buffer, unsigned size) {
     }
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(f) {
+    if (!f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -278,7 +278,7 @@ int write (int fd, const void *buffer, unsigned size) {
         return size;
     }
     struct file* f = getFileP(fd);
-    if(f) {
+    if (!f) {
         lock_release(&file_lock);
         return -1;
     }
@@ -292,7 +292,7 @@ void seek (int fd, unsigned position) {
     
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(f)
+    if (!f)
     {
         file_seek(f, position);
     }
@@ -303,7 +303,7 @@ void seek (int fd, unsigned position) {
 unsigned tell (int fd) {
     lock_acquire(&file_lock);
     struct file* f = getFileP(fd);
-    if(f)
+    if (!f)
     {
         lock_release(&file_lock);
         return -1;
