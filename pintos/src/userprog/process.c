@@ -184,12 +184,12 @@ int process_wait (pid_t pid)
 {
     struct child_t* c = getChild(pid);
     if (!c) return -1;
-    else if (c->wait) return -1;
-    else if (c->exit) return c->ret;
+    if (c->wait) return -1;
+    c->wait = true;
+
+    if (c->exit) return c->ret;
     else {
-        c->wait = true;
         sema_down(&c->exit_sema);
-        c->wait = false;
         return c->ret;
     }
 }
