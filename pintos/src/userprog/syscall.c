@@ -71,6 +71,9 @@ static void syscall_handler (struct intr_frame *f UNUSED)
 
     void* fesp = f->esp;
 
+    if (!pagedir_get_page(thread_current()->pagedir, fesp))
+        exit(-1);
+
     switch (getArg(&f->esp)) {
         case SYS_HALT:
             halt();
@@ -164,7 +167,7 @@ void exit (int status) {
 // from the exec until it knows whether the child process successfully loaded
 // its executable. You must use appropriate synchronization to ensure this. 
 pid_t exec (const char *cmdline) {
-    if (!validate_string(cmdline)) return -1;
+    if (!validate_string(cmdline)) exit(-1);
     cmdline = pagedir_get_page(thread_current()->pagedir, cmdline);
     return process_execute(cmdline);
 }
@@ -177,7 +180,7 @@ int wait (pid_t pid) {
 // create a new file with an initial size
 // return whether or not successful
 bool create (const char *file, unsigned initial_size) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file)) exit(-1);
     file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     bool ret = filesys_create(file, initial_size);
@@ -188,7 +191,7 @@ bool create (const char *file, unsigned initial_size) {
 // delete a file
 // return whether or not successful
 bool remove (const char *file) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file)) exit(-1);
     file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     bool ret = filesys_remove(file);
@@ -198,7 +201,7 @@ bool remove (const char *file) {
 
 // open a file, and return a file descriptor
 int open (const char *file) {
-    if (!validate_string(file)) return -1;
+    if (!validate_string(file)) exit(-1);
     file = pagedir_get_page(thread_current()->pagedir, file);
     lock_acquire(&file_lock);
     int file_desc = thread_current()->fd++; //file_desc takes and curr file desc
@@ -246,7 +249,7 @@ int filesize (int fd) {
 // returns number of bytes actually read
 // fd 0 reads from the keyboard using input_getc()
 int read (int fd, void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size)) return 0;
+    if (!validate_buffer(buffer, size)) exit(-1);
     buffer = pagedir_get_page(thread_current()->pagedir, buffer);
     if (fd == 0)
     {
@@ -273,7 +276,7 @@ int read (int fd, void *buffer, unsigned size) {
 // fd 1 writes to the console using one call to putbuf() as long as size isn't
 //    longer than a few hundred bytes (weird stuff happens)
 int write (int fd, const void *buffer, unsigned size) {
-    if (!validate_buffer(buffer, size)) return 0;
+    if (!validate_buffer(buffer, size)) exit(-1);
     buffer = pagedir_get_page(thread_current()->pagedir, buffer);
     if(fd == 1) {
         //write  to console

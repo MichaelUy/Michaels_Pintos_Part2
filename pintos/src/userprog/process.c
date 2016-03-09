@@ -542,6 +542,7 @@ void setupMainArgs(void** sp, const char* cmdline) {
 
     // copy the data in
     __push(sp, cmdline, sz+1);
+    // hexdump(*sp - 16, 64);
 
     sptmpi = spOrig;
     sptmpj = spOrig-2;
@@ -567,6 +568,7 @@ void setupMainArgs(void** sp, const char* cmdline) {
         }
         sptmpj--;
     }
+    // hexdump(*sp - 16, 64);
 
     // store the address of argv[0] and change the sp location
     *sp = argv0 = sptmpi;
@@ -582,18 +584,24 @@ void setupMainArgs(void** sp, const char* cmdline) {
     __push(sp, &sptmpi, sizeof(char*));
 
     sptmpi = spOrig-1;
-    while (sptmpi --> argv0) {
+    while (sptmpi > argv0) {
+        // so triggered rn
         if (*sptmpi == '\0') {
-            if (!argc) {
+            // if not first one (the null of last term)
+            if (argc) {
                 sptmpi++;
                 __push(sp, &sptmpi, sizeof(char*));
                 sptmpi--;
             }
+            // increment where we find the data
             argc++;
+            // hexdump(*sp, 64);
         }
+        // increment where we're looking
+        sptmpi--;
     }
+    // hexdump(*sp - 16, 64);
     // push argv[0]
-    argc++;
     __push(sp, &argv0, sizeof(char*));
 
     // push argv
@@ -682,7 +690,8 @@ static bool setup_stack(void** esp, const char* cmdline)
 
     setupMainArgs(esp, cmdline);
 
-    // hexdump(*esp - 16, 256);
+    // printf("\n");
+    // hexdump(*esp - 16, 128);
 
     // hexdump(esp, 4);
 
