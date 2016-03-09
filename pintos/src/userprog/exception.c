@@ -81,6 +81,7 @@ kill (struct intr_frame *f)
      
   /* The interrupt frame's code segment value tells us where the
      exception originated. */
+     
   switch (f->cs)
     {
     case SEL_UCSEG:
@@ -89,7 +90,8 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      thread_exit (); 
+      //thread_exit (); 
+      exit(-1);
 
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
@@ -144,7 +146,7 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
+  if(not_present = (f->error_code & PF_P) == 0) exit(-1);
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
@@ -156,6 +158,7 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
+  //if(not_present) return;
   kill (f);
 }
 
