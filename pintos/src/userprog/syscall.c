@@ -327,6 +327,7 @@ void close (int fd) {
             list_remove(&fdsp->elem);
             file_close(fdsp->file_ptr);
             free(fdsp);
+            lock_release(&file_lock);
             return;
         }
     }
